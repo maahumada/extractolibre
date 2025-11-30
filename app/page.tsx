@@ -3,6 +3,26 @@ import ClientesTable from './components/ClientesTable';
 
 export const dynamic = 'force-dynamic';
 
+type Cliente = {
+  _id: string;
+  meliUserId: number;
+  nombre: string;
+  alias?: string;
+  telefono?: string | null;
+  direccion?: {
+    calle?: string;
+    numero?: string;
+    ciudad?: string;
+    provincia?: string;
+    cp?: string;
+    textoCompleto?: string;
+  };
+  createdAt?: string;
+  updatedAt?: string;
+  lastVentaDate?: string;
+  nota?: string;
+};
+
 async function getBaseUrl() {
   if (process.env.NEXT_PUBLIC_BASE_URL) {
     return process.env.NEXT_PUBLIC_BASE_URL.replace(/\/$/, '');
@@ -16,16 +36,30 @@ async function getBaseUrl() {
   return '';
 }
 
-async function getClientes() {
+type ClientesResponse = {
+  data: Cliente[];
+  total: number;
+  limit: number;
+  page: number;
+};
+
+async function fetchClientes(): Promise<ClientesResponse> {
   try {
     const base = await getBaseUrl();
     const res = await fetch(`${base}/api/clientes`, { cache: 'no-store' });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      return { data: [], total: 0, limit: 20, page: 1 };
+    }
     const data = await res.json();
-    return data.data || [];
+    return {
+      data: data.data || [],
+      total: data.total || 0,
+      limit: data.limit ?? 20,
+      page: data.page || 1,
+    } as ClientesResponse;
   } catch (error) {
     console.error('No se pudo cargar clientes', error);
-    return [];
+    return { data: [], total: 0, limit: 20, page: 1 };
   }
 }
 
@@ -50,7 +84,7 @@ function buildAuthUrl() {
 }
 
 export default async function Home() {
-  const clientes = await getClientes();
+  const clientes = await fetchClientes();
   const status = await getMeliStatus();
   const authUrl = buildAuthUrl();
 
@@ -87,7 +121,7 @@ export default async function Home() {
           )}
         </header>
 
-        <ClientesTable initialClientes={clientes} />
+        <ClientesTable initialData={clientes} />
       </main>
     </div>
   );

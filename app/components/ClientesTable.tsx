@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import type { FormEvent } from 'react';
 
 type Cliente = {
   _id: string;
@@ -40,13 +41,26 @@ type VentasResponse = {
   ventas: VentaResumen[];
 };
 
+type ClientesResponse = {
+  data: Cliente[];
+  total: number;
+  limit: number;
+  page: number;
+};
+
 type Props = {
-  initialClientes: Cliente[];
+  initialData: ClientesResponse;
 };
 
 // Tabla de clientes con refresh manual desde el browser
-export default function ClientesTable({ initialClientes }: Props) {
-  const [clientes, setClientes] = useState<Cliente[]>(initialClientes);
+export default function ClientesTable({ initialData }: Props) {
+  const [clientes, setClientes] = useState<Cliente[]>(initialData.data);
+  const [page, setPage] = useState<number>(initialData.page || 1);
+  const [limit, setLimit] = useState<number>(initialData.limit ?? 20);
+  const [total, setTotal] = useState<number>(
+    initialData.total ?? initialData.data.length
+  );
+  const [searchTerm, setSearchTerm] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,20 +71,67 @@ export default function ClientesTable({ initialClientes }: Props) {
   const [telefonoSaving, setTelefonoSaving] = useState(false);
   const [notaSaving, setNotaSaving] = useState(false);
 
-  const refresh = async () => {
+  const fetchClientes = async (
+    pageToLoad = page,
+    limitToUse = limit,
+    search = searchTerm
+  ) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/clientes', { cache: 'no-store' });
+      const params = new URLSearchParams();
+      if (limitToUse === 0) {
+        params.set('limit', '0');
+      } else {
+        params.set('limit', String(limitToUse || 20));
+        params.set('page', String(pageToLoad || 1));
+      }
+      if (search?.trim()) {
+        params.set('q', search.trim());
+      }
+
+      const res = await fetch(`/api/clientes?${params.toString()}`, {
+        cache: 'no-store',
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setClientes(data.data || []);
+      setPage(data.limit > 0 ? data.page || 1 : 1);
+      setLimit(data.limit ?? limitToUse);
+      setTotal(data.total ?? data.data?.length ?? 0);
+      setSearchTerm(search);
     } catch (err) {
       console.error('Error refrescando clientes', err);
       setError('No se pudo refrescar la lista');
     } finally {
       setLoading(false);
     }
+  };
+
+  const refresh = async () => {
+    await fetchClientes(page, limit);
+  };
+
+  const totalPages = limit > 0 ? Math.max(Math.ceil(total / limit), 1) : 1;
+
+  const handlePageChange = async (nextPage: number) => {
+    if (limit === 0) return;
+    const safePage = Math.min(Math.max(nextPage, 1), totalPages);
+    await fetchClientes(safePage, limit);
+  };
+
+  const handleLimitChange = async (nextLimit: number) => {
+    await fetchClientes(1, nextLimit);
+  };
+
+  const handleSearchSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    await fetchClientes(1, limit, searchTerm.trim());
+  };
+
+  const clearSearch = async () => {
+    setSearchTerm('');
+    await fetchClientes(1, limit, '');
   };
 
   const loadVentas = async (clienteId: string) => {
@@ -108,35 +169,115 @@ export default function ClientesTable({ initialClientes }: Props) {
 
   return (
     <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-3 justify-between flex-wrap">
-        <div>
-          <h2 className="text-xl font-semibold">Clientes</h2>
-          <span className="text-sm text-slate-600">
-            {clientes.length} encontrado{clientes.length === 1 ? '' : 's'}
-          </span>
+      <div className="px-5 py-4 border-b border-slate-200 flex flex-col gap-3">
+        <div className="flex items-center gap-3 justify-between flex-wrap">
+          <div>
+            <h2 className="text-xl font-semibold">Clientes</h2>
+            <span className="text-sm text-slate-600">
+              Mostrando {clientes.length} de {total} cliente
+              {total === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={syncManual}
+              className="inline-flex items-center rounded-full bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-green-700 transition disabled:opacity-60"
+              disabled={syncing}
+            >
+              {syncing ? 'Sincronizando...' : 'Sincronizar órdenes'}
+            </button>
+            <button
+              onClick={refresh}
+              className="inline-flex items-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 transition disabled:opacity-60"
+              disabled={loading}
+            >
+              {loading ? 'Actualizando...' : 'Refrescar lista'}
+            </button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={syncManual}
-            className="inline-flex items-center rounded-full bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-green-700 transition disabled:opacity-60"
-            disabled={syncing}
-          >
-            {syncing ? 'Sincronizando...' : 'Sincronizar órdenes'}
-          </button>
-          <button
-            onClick={refresh}
-            className="inline-flex items-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 transition disabled:opacity-60"
-            disabled={loading}
-          >
-            {loading ? 'Actualizando...' : 'Refrescar lista'}
-          </button>
-        </div>
+        <form
+          onSubmit={handleSearchSubmit}
+          className="flex w-full flex-col gap-2 sm:flex-row sm:items-center"
+        >
+          <input
+            type="search"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar por nombre, alias o ciudad"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-300"
+          />
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              className="rounded-full bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-300 transition disabled:opacity-60"
+              disabled={loading}
+            >
+              Buscar
+            </button>
+            {searchTerm ? (
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="rounded-full bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 transition disabled:opacity-60"
+                disabled={loading}
+              >
+                Limpiar
+              </button>
+            ) : null}
+          </div>
+        </form>
       </div>
       {error && (
         <div className="px-5 py-3 text-sm text-red-700 bg-red-50 border-b border-red-200">
           {error}
         </div>
       )}
+      <div className="px-5 py-4 border-b border-slate-200 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <p className="text-sm text-slate-600">
+          {limit === 0
+            ? `Mostrando todos los ${clientes.length} clientes`
+            : `Página ${page} de ${totalPages} | ${clientes.length} de ${total} clientes`}
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <label
+            htmlFor="limit"
+            className="text-sm font-semibold text-slate-800"
+          >
+            Por página
+          </label>
+          <select
+            id="limit"
+            value={limit === 0 ? '0' : String(limit)}
+            onChange={(e) => handleLimitChange(Number(e.target.value))}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-300"
+          >
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="0">Todos</option>
+          </select>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handlePageChange(page - 1)}
+              className="rounded-full bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-300 transition disabled:opacity-50"
+              disabled={page <= 1 || limit === 0}
+            >
+              Anterior
+            </button>
+            <span className="text-sm text-slate-700">
+              {limit === 0 ? 'Todos' : `Página ${page} de ${totalPages}`}
+            </span>
+            <button
+              onClick={() => handlePageChange(page + 1)}
+              className="rounded-full bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-300 transition disabled:opacity-50"
+              disabled={limit === 0 || page >= totalPages}
+            >
+              Siguiente
+            </button>
+          </div>
+        </div>
+      </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-base">
           <thead className="bg-slate-50">
@@ -189,6 +330,7 @@ export default function ClientesTable({ initialClientes }: Props) {
       </div>
       {selected && (
         <DetailModal
+          key={`${selected._id}-${selected.telefono ?? ''}-${selected.nota ?? ''}`}
           cliente={selected}
           onClose={() => setSelected(null)}
           onRefresh={refresh}
@@ -266,15 +408,9 @@ function DetailModal({
   onEditNota,
   notaSaving,
 }: DetailProps) {
-  const [telefonoValue, setTelefonoValue] = useState<string>(cliente.telefono || '');
+  const [telefonoValue, setTelefonoValue] = useState<string>(() => cliente.telefono || '');
   const [telefonoEditing, setTelefonoEditing] = useState(false);
-  const [notaValue, setNotaValue] = useState<string>(cliente.nota || '');
-
-  useEffect(() => {
-    setTelefonoValue(cliente.telefono || '');
-    setTelefonoEditing(false);
-    setNotaValue(cliente.nota || '');
-  }, [cliente._id, cliente.telefono, cliente.nota]);
+  const [notaValue, setNotaValue] = useState<string>(() => cliente.nota || '');
 
   const addressLines = [
     [cliente.direccion?.calle, cliente.direccion?.numero].filter(Boolean).join(' '),
