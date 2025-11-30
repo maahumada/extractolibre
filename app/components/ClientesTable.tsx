@@ -285,7 +285,7 @@ function DetailModal({
     cliente.direccion?.cp ? `CP ${cliente.direccion?.cp}` : '',
   ]
     .filter((line) => !!line)
-    .map((line) => line.trim());
+    .map((line) => (line || '').trim());
 
   return (
     <div

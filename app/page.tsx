@@ -1,11 +1,19 @@
 import { headers } from 'next/headers';
 import ClientesTable from './components/ClientesTable';
 
+export const dynamic = 'force-dynamic';
+
 async function getBaseUrl() {
-  const envBase = process.env.NEXT_PUBLIC_BASE_URL;
-  if (envBase) return envBase.replace(/\/$/, '');
-  const host = (await headers()).get('host');
-  return host ? `http://${host}` : '';
+  if (process.env.NEXT_PUBLIC_BASE_URL) {
+    return process.env.NEXT_PUBLIC_BASE_URL.replace(/\/$/, '');
+  }
+  const hdrs = await headers();
+  const host = hdrs.get('host');
+  if (host) {
+    const protocol = host.startsWith('localhost') ? 'http' : 'https';
+    return `${protocol}://${host}`;
+  }
+  return '';
 }
 
 async function getClientes() {
