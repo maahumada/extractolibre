@@ -1,64 +1,85 @@
-import Image from "next/image";
+import { headers } from 'next/headers';
+import ClientesTable from './components/ClientesTable';
 
-export default function Home() {
+async function getBaseUrl() {
+  const envBase = process.env.NEXT_PUBLIC_BASE_URL;
+  if (envBase) return envBase.replace(/\/$/, '');
+  const host = (await headers()).get('host');
+  return host ? `http://${host}` : '';
+}
+
+async function getClientes() {
+  try {
+    const base = await getBaseUrl();
+    const res = await fetch(`${base}/api/clientes`, { cache: 'no-store' });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.data || [];
+  } catch (error) {
+    console.error('No se pudo cargar clientes', error);
+    return [];
+  }
+}
+
+async function getMeliStatus() {
+  try {
+    const base = await getBaseUrl();
+    const res = await fetch(`${base}/api/meli/status`, { cache: 'no-store' });
+    if (!res.ok) return { connected: false };
+    return res.json();
+  } catch (error) {
+    console.error('No se pudo verificar estado de token', error);
+    return { connected: false };
+  }
+}
+
+function buildAuthUrl() {
+  const clientId = process.env.MELI_CLIENT_ID;
+  const redirectUri = process.env.MELI_REDIRECT_URI;
+  if (!clientId || !redirectUri) return null;
+  const encodedRedirect = encodeURIComponent(redirectUri);
+  return `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodedRedirect}&state=web`;
+}
+
+export default async function Home() {
+  const clientes = await getClientes();
+  const status = await getMeliStatus();
+  const authUrl = buildAuthUrl();
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
+    <div className="min-h-screen bg-[#f7f7f5] text-slate-900">
+      <main className="max-w-5xl mx-auto px-6 py-10">
+        <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-8">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+              Mercado Libre
+            </p>
+            <h1 className="text-3xl font-bold text-slate-900">
+              Clientes y ventas
+            </h1>
+            <p className="text-base text-slate-700">
+              Conectá tu cuenta y refrescá los clientes obtenidos de las órdenes.
+            </p>
+          </div>
+          {status?.connected ? (
+            <div className="inline-flex items-center justify-center rounded-full bg-green-100 px-5 py-3 text-base font-semibold text-green-800 border border-green-200">
+              Conectado a Mercado Libre
+            </div>
+          ) : authUrl ? (
             <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              href={authUrl}
+              className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-base font-semibold text-white shadow hover:bg-blue-700 transition"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+              Conectar con Mercado Libre
+            </a>
+          ) : (
+            <div className="text-sm text-red-600 bg-white border border-red-200 rounded-md px-3 py-2">
+              Configurá <code>MELI_CLIENT_ID</code> y <code>MELI_REDIRECT_URI</code>.
+            </div>
+          )}
+        </header>
+
+        <ClientesTable initialClientes={clientes} />
       </main>
     </div>
   );
